@@ -1,0 +1,8 @@
+
+# Object directory
+obj/
+
+# tags and cscope files
+tags
+cscope.*
+
