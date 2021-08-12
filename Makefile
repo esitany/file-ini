@@ -13,6 +13,7 @@ SOURCES   := file_ini.c
 
 INCLUDES  := file_ini.h
 
+DEFINES  :=
 
 CFLAGS += -Wall \
           -fPIC \
@@ -27,9 +28,10 @@ OBJ_DIR := obj
 OBJ_LIB := -Lobj \
            -lini
 
-INC_DIR := -I$(SRC_DIR)
+override INC_DIR += -I$(SRC_DIR)
 
-OBJ_CFLAGS := $(INC_DIR) \
+OBJ_CFLAGS := $(DEFINES) \
+              $(INC_DIR) \
               -c \
               $(CFLAGS)
 
@@ -44,24 +46,21 @@ OBJ_SRC    := $(SOURCES:%.c=$(OBJ_DIR)/%.o)
 all:
 	make clean
 	make lib
+	make bin
 
-bin: $(OBJ_DIR)/test_$(TARGET)
+bin:
+	@echo "Compile..."
+	$(CC) -o $(OBJ_DIR)/ini_test ini_test.c $(OBJ_LIB) $(OBJ_LDFLAGS) -Wl,-Map=$(OBJ_DIR)/$(TARGET).map
 
-lib: $(OBJ_DIR)/$(TARGET).a
-
-$(OBJ_DIR)/test_$(TARGET):
-	@echo "mkdir $(OBJ_DIR)..."
-	$(CC) -o $@ main.c $(OBJ_LIB) $(OBJ_LDFLAGS) -Wl,-Map=$(OBJ_DIR)/$(TARGET).map
-
-$(OBJ_DIR)/$(TARGET).a: $(OBJ_SRC)
-	@echo "mkdir $(OBJ_DIR)..."
-	@mkdir -p $(SRC_DIR)/$(OBJ_DIR)
-	$(AR) -r $@ $(OBJ_SRC)
+lib: $(OBJ_SRC)
+	@echo "Compile...Library"
+	$(CC) -shared -Wl,-soname,$(OBJ_DIR)/$(TARGET).so -o $(OBJ_DIR)/$(TARGET).so $(OBJ_SRC)
+	$(AR) -r $(OBJ_DIR)/$(TARGET).a $(OBJ_SRC)
 
 $(OBJ_DIR)/%.o : %.c
 	@echo "mkdir $(OBJ_DIR)..."
 	@mkdir -p $(SRC_DIR)/$(OBJ_DIR)
-	$(CC) $(DEFS) $(OBJ_CFLAGS) -o $@ $<
+	$(CC) $(OBJ_CFLAGS) -o $@ $<
 
 clean:
 	@echo "Clean $(SRC_DIR)/$(OBJ_DIR)..."
@@ -73,12 +72,5 @@ install:
 	install -d $(DESTDIR)/lib
 	install -m 644 $(INCLUDES) $(DESTDIR)/inc
 	install -m 644 $(OBJ_DIR)/$(TARGET).a $(DESTDIR)/lib
-
-uninstall:
-	@echo "DEST Path = $(DESTDIR)"
-	@rm -rvf $(DESTDIR)
-	# @rm -rf $(DESTDIR)/bin/$(TARGET)
-	# @rm -rf $(DESTDIR)/lib/lib$(TARGET).a
-	# @rm -rf $(DESTDIR)/inc/$(INCLUDES)
-
+	install -m 644 $(OBJ_DIR)/$(TARGET).so $(DESTDIR)/lib
 

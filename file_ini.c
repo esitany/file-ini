@@ -19,26 +19,33 @@
 
 #include "file_ini.h"
 
-#ifndef lDbg
+#if defined(ENABLE_LOG_TRACE)
+  #include "log_trace.h"
+
+  #define TAG_NAME     "UTIL_INI"
+
+  #define lDbg(...)        ltMsg(TAG_NAME, LT_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+  #define lWrn(...)        ltMsg(TAG_NAME, LT_WARN,  __FILE__, __LINE__, __VA_ARGS__)
+  #define lErr(...)        ltMsg(TAG_NAME, LT_ERR,   __FILE__, __LINE__, __VA_ARGS__)
+
+  #define hexdump(T, P, S) ltDump(TAG_NAME, LT_DEBUG, __FILE__, __LINE__, P, S, T);
+
+#else
   #define lDbg(fmt, ...) { \
     fprintf(stdout, "INI(%5d) > " fmt "\n", __LINE__,  ##__VA_ARGS__); \
     fflush(stdout); \
   }
-#endif
-#ifndef lWrn
+
   #define lWrn(fmt, ...) { \
     fprintf(stdout, "\x1b[33mINI(%5d) > " fmt "\x1B[0m\n", __LINE__,  ##__VA_ARGS__); \
     fflush(stdout); \
   }
-#endif
-#ifndef lErr
+
   #define lErr(fmt, ...) { \
     fprintf(stdout, "\x1b[31mINI(%5d) > " fmt "[E=%s(%d)]\x1B[0m\n", __LINE__,  ##__VA_ARGS__, strerror(errno), errno); \
     fflush(stdout); \
   }
-#endif
 
-#ifndef hexdump
   void fiHexdump(int line, const char *title, void *pack, int size);
 
   #define hexdump(T, P, S) fiHexdump(__LINE__, T, P, S)
@@ -141,6 +148,11 @@ void fiDestroy(stFIHandle *hIni)
             }
 
             hIni->head = (stFINode *)head->next;
+            if ( hIni->head ) {
+                hIni->head->front = NULL;
+            }
+
+            free(head);
         }
 
         free(hIni);
@@ -211,7 +223,9 @@ void *fiMakeSection(const char *str, size_t size)
         }
 
         if (sect != NULL) {
-            snprintf(sect->name, size + 1, "%s", str);
+            if (size > 0) {
+                snprintf(sect->name, size + 1, "%s", str);
+            }
             sect->hIni->head = NULL;
             sect->hIni->tail = NULL;
         }
@@ -499,19 +513,22 @@ stFISection *fiFindSection(stFIHandle *hIni, const char *key)
             next = head->next;
             if( head->cfg.type == E_INI_T_SECTION ) {
                 fiSect = (stFISection *)head->value;
-                if (lenKey == 0) {
-                    if (fiSect->name == NULL) {
+
+                if (fiSect->name == NULL) {
+                    if (lenKey == 0) {
                         sect = fiSect;
                     }
                 }
                 else {
-                    if (strcmp((const char *)fiSect->name, (const char *)key) == 0) {
+                    if ( (lenKey > 0)
+                      && (strcmp((const char *)fiSect->name, (const char *)key) == 0) ) {
                         sect = fiSect;
                     }
                 }
             }
             head = next;
         }
+
     }
 
     return sect;
@@ -546,6 +563,7 @@ stFISection *fiSearchSection(stFIHandle *hIni, const char *key)
                     node->next  = NULL;
 
                     fiInsertNode(hIni, node);
+
                 }
             }
         }
@@ -596,10 +614,13 @@ int fiInsertProperty(stFIHandle *hIni, char *str, size_t size)
         ret = -EINVAL;
     }
     else {
-        if (hIni->tail->cfg.type == E_INI_T_SECTION) {
-            sect = (stFISection *)hIni->tail->value;
+        if (hIni->tail) {
+            if (hIni->tail->cfg.type == E_INI_T_SECTION) {
+                sect = (stFISection *)hIni->tail->value;
+            }
         }
-        else {
+
+        if (sect == NULL) {
             sect = fiSearchSection(hIni, "");
             if (sect == NULL) {
                 lWrn("fiSearchSection() failed!!!");
@@ -697,6 +718,7 @@ stFIHandle *fiProcRead(int fd)
                 offTok = tok - ptr;
                 offOld = old - ptr;
 
+//                  lDbg("Offset=(%d, R=%d, T=%d, O=%d)", (int)offset, (int)szRead, (int)offTok, (int)offOld);
                 while (offset < offTok) {
                     if ( (ptr[offset] == 0x0D) // CR \r
                       || (ptr[offset] == 0x0A) ) { // LF \n
@@ -713,7 +735,6 @@ stFIHandle *fiProcRead(int fd)
                     }
                 }
 
-//                  lDbg("Offset=(%d, R=%d, T=%d, O=%d)", (int)offset, (int)szRead, (int)offTok, (int)offOld);
                 if (ptr[offOld - 1] == 0) {
                     szLine = strlen(tok);
 //                      lDbg("Line(%d) = %s", (int)szLine, tok);
@@ -727,7 +748,7 @@ stFIHandle *fiProcRead(int fd)
                     default               : break;
                     }
 
-                    offset = offOld;
+                    offset = offOld + ((ptr[offOld] == 0x0A) ? 1 : 0);
                     tok = (offOld < szRead) ? strtok_r(NULL, delmit, &old) : NULL;
                 }
                 else {
@@ -735,11 +756,11 @@ stFIHandle *fiProcRead(int fd)
                 }
             }
 
-            offTok = szRead - offset;
+            if (szRead > offset) {
+                offTok = szRead - offset;
 //              hexdump("After test", ptr, szRead);
 //              lDbg("read=%d, elapse=%d, reamin=%d", (int)szRead, (int)offset, (int)offTok );
 
-            if (offTok > 0) {
                 memmove(&ptr[0], &ptr[offset], offTok);
                 offset = offTok;
             }
@@ -772,12 +793,12 @@ int fiProcSave(int fd, stFIHandle *hIni)
         ret = -EINVAL;
     }
     else {
-       head = (stFINode *)hIni->head;
-
-        while ( head != NULL) {
+        head = (stFINode *)hIni->head;
+        while ( head != NULL ) {
             next = head->next;
             switch(head->cfg.type) {
             case E_INI_T_SECTION  :
+                sect = (stFISection *)head->value;
                 if (sect->name) {
                     snprintf(ptr, FI_BUFFER_SIZE, "[%s]" FI_LINE, sect->name);
                     write(fd, ptr, strlen(ptr));
@@ -786,6 +807,7 @@ int fiProcSave(int fd, stFIHandle *hIni)
                 break;
 
             case E_INI_T_PROPERTY :
+                prop = (stFIProperty *)head->value;
                 snprintf(ptr, FI_BUFFER_SIZE, "%s = %s" FI_LINE, prop->key, prop->val);
                 write(fd, ptr, strlen(ptr));
                 break;
@@ -817,7 +839,7 @@ int fiFileSave(const char *file, stFIHandle *hIni)
         ret = -EINVAL;
     }
     else {
-        fd = open(file, O_RDWR | O_CREAT | O_SYNC | O_TRUNC, (mode_t)00666);
+        fd = open(file, O_RDWR | O_CREAT | O_TRUNC, (mode_t)00666);
         if (fd == -1) {
             lErr("%s open() failed...", file);
             ret = -EFAULT;
@@ -861,7 +883,6 @@ stFIHandle *fiFileRead(const char *file)
             }
             else {
                 hIni = fiProcRead(fd);
-
                 close(fd);
             }
         }
