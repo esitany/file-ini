@@ -1,34 +1,40 @@
 
 SRC_DIR = $(shell pwd)
 
-CC    := $(COMPILER_PREFIX)gcc
-CXX   := $(COMPILER_PREFIX)g++
-AR    := $(COMPILER_PREFIX)ar
-STRIP := $(COMPILER_PREFIX)strip
+CC     := $(COMPILER_PREFIX)gcc
+CXX    := $(COMPILER_PREFIX)g++
+AR     := $(COMPILER_PREFIX)ar
+STRIP  := $(COMPILER_PREFIX)strip
+RANLIB := $(COMPILER_PREFIX)ranlib
 
 DESTDIR ?= ./destdir
 
 
-SOURCES   := file_ini.c
+SOURCES  := file_ini.c
 
-INCLUDES  := file_ini.h
+INCLUDES := file_ini.h
 
-DEFINES  :=
+override DEFINES +=
 
-CFLAGS += -Wall \
-          -fPIC \
-          -g
+CFLAGS   := -Wall \
+            -fPIC \
+            -g
 
-LDFLAGS :=
+LDFLAGS  :=
 
-TARGET := libini
+TARGET   := libini
 
-OBJ_DIR := obj
+OBJ_DIR  := obj
 
-OBJ_LIB := -Lobj \
-           -lini
+OBJ_LIB  := -Lobj \
+            -lini
 
 override INC_DIR += -I$(SRC_DIR)
+
+ifeq ($(ARCH), x86)
+  CFLAGS  += -m32
+  LDFLAGS += -m32
+endif
 
 OBJ_CFLAGS := $(DEFINES) \
               $(INC_DIR) \
@@ -54,8 +60,9 @@ bin:
 
 lib: $(OBJ_SRC)
 	@echo "Compile...Library"
-	$(CC) -shared -Wl,-soname,$(OBJ_DIR)/$(TARGET).so -o $(OBJ_DIR)/$(TARGET).so $(OBJ_SRC)
+	$(CC) -shared -Wl,-soname,$(OBJ_DIR)/$(TARGET).so -o $(OBJ_DIR)/$(TARGET).so $(OBJ_SRC) $(OBJ_LDFLAGS)
 	$(AR) -r $(OBJ_DIR)/$(TARGET).a $(OBJ_SRC)
+	$(RANLIB) $(OBJ_DIR)/$(TARGET).a
 
 $(OBJ_DIR)/%.o : %.c
 	@echo "mkdir $(OBJ_DIR)..."
@@ -72,5 +79,5 @@ install:
 	install -d $(DESTDIR)/lib
 	install -m 644 $(INCLUDES) $(DESTDIR)/inc
 	install -m 644 $(OBJ_DIR)/$(TARGET).a $(DESTDIR)/lib
-	install -m 644 $(OBJ_DIR)/$(TARGET).so $(DESTDIR)/lib
+	# install -m 644 $(OBJ_DIR)/$(TARGET).so $(DESTDIR)/lib
 
